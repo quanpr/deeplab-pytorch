@@ -21,7 +21,26 @@ from addict import Dict
 
 from libs.models import *
 from libs.utils import DenseCRF
+import os
+import pdb
 
+categories = {
+    'water':['water-other', 'waterdrops', 'sea', 'river', 'fog'],
+    'ground':['ground-other', 'playingfield', 'platform', 'railroad', 'pavement',
+                'road', 'gravel', 'mud', 'dirt', 'snow', 'sand'],
+    'solid':['solid-other', 'hill', 'mountain', 'stone', 'rock', 'wood'],
+    'sky':['sky-other','clouds'],
+    'plant':['plant-other', 'straw', 'moss', 'branch', 'flower', 'leaves',
+                'bush', 'tree', 'grass']
+}
+
+def check_categories_validity(query):
+    found = False
+    for key in categories:
+        if query in categories[key]:
+            print('found {}'.format(query))
+            found = True
+    return found
 
 def get_device(cuda):
     cuda = cuda and torch.cuda.is_available()
@@ -59,7 +78,8 @@ def setup_postprocessor(CONFIG):
 def preprocessing(image, device, CONFIG):
     # Resize
     scale = CONFIG.IMAGE.SIZE.TEST / max(image.shape[:2])
-    image = cv2.resize(image, dsize=None, fx=scale, fy=scale)
+    # image = cv2.resize(image, dsize=None, fx=scale, fy=scale)
+    image = cv2.resize(image, dsize=(299, 299), fx=scale, fy=scale)
     raw_image = image.astype(np.uint8)
 
     # Subtract mean values
@@ -137,7 +157,6 @@ def single(config_path, model_path, image_path, cuda, crf):
     """
     Inference from a single image
     """
-
     # Setup
     CONFIG = Dict(yaml.load(config_path))
     device = get_device(cuda)
@@ -169,6 +188,18 @@ def single(config_path, model_path, image_path, cuda, crf):
     ax.imshow(raw_image[:, :, ::-1])
     ax.axis("off")
 
+    for key in categories:
+        for _cls in categories[key]:
+            found = False
+            for number in classes:
+                if classes[number] == _cls:
+                    found = True
+                    break
+            if not found:
+                pdb.set_trace()
+    print('all categories in classes label!')
+    
+    background_maks = np.zeros_like(raw_image, dtype=np.float64)
     for i, label in enumerate(labels):
         mask = labelmap == label
         ax = plt.subplot(rows, cols, i + 2)
@@ -176,10 +207,23 @@ def single(config_path, model_path, image_path, cuda, crf):
         ax.imshow(raw_image[..., ::-1])
         ax.imshow(mask.astype(np.float32), alpha=0.5)
         ax.axis("off")
+        if check_categories_validity(classes[label]):
+            background_maks += np.expand_dims(mask, axis=2)
+    
+    idx = image_path[::-1].find('/')
+    mask_dir = image_path[:(len(image_path)-idx)]+'mask.npy'
+    print('Save background mask to: {}'.format(mask_dir))
+    np.save(mask_dir, background_maks, allow_pickle=True)
 
     plt.tight_layout()
     plt.show()
 
+    fig = plt.gcf()
+    prefix = image_path.split('/')[-1]
+    store_dir='result1/'
+    if not os.path.isdir(store_dir):
+        os.makedirs(store_dir, exist_ok=True)
+    fig.savefig(store_dir+prefix+'_demo.jpg')
 
 @main.command()
 @click.option(
