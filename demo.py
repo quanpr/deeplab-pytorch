@@ -35,12 +35,11 @@ categories = {
 }
 
 def check_categories_validity(query):
-    found = False
     for key in categories:
         if query in categories[key]:
             print('found {}'.format(query))
-            found = True
-    return found
+            return True
+    return False
 
 def get_device(cuda):
     cuda = cuda and torch.cuda.is_available()
@@ -174,6 +173,8 @@ def single(config_path, model_path, image_path, cuda, crf):
 
     # Inference
     image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if image is None:
+        return 
     image, raw_image = preprocessing(image, device, CONFIG)
     labelmap = inference(model, image, raw_image, postprocessor)
     labels = np.unique(labelmap)
@@ -202,16 +203,31 @@ def single(config_path, model_path, image_path, cuda, crf):
     background_maks = np.zeros_like(raw_image, dtype=np.float64)
     for i, label in enumerate(labels):
         mask = labelmap == label
+        # ax = plt.subplot(rows, cols, i + 2)
+        # ax.set_title(classes[label])
+        # ax.imshow(raw_image[..., ::-1])
+        # ax.imshow(mask.astype(np.float32), alpha=0.5)
+        # ax.axis("off")
+        ratio=''
+        if check_categories_validity(classes[label]):
+            segment = raw_image[mask]
+            std, mean = np.std(segment, axis=0), np.mean(segment, axis=1)
+            std, mean = std.mean(), mean.mean()
+            ratio = std/mean
+            if ratio > 0.40:
+                print('Satisified! ratio: {:.4f} std: {:.3f} mean: {:.3f}'.format(ratio, std, mean))
+                background_maks += mask[:,:,np.newaxis]
+            else:
+                print('Discarded! ratio: {:.4f} std: {:.3f} mean: {:.3f}'.format(ratio, std, mean))
+
         ax = plt.subplot(rows, cols, i + 2)
-        ax.set_title(classes[label])
+        ax.set_title(classes[label]+str(ratio)[:4])
         ax.imshow(raw_image[..., ::-1])
         ax.imshow(mask.astype(np.float32), alpha=0.5)
         ax.axis("off")
-        if check_categories_validity(classes[label]):
-            background_maks += np.expand_dims(mask, axis=2)
-    
+
     idx = image_path[::-1].find('/')
-    mask_dir = image_path[:(len(image_path)-idx)]+'mask.npy'
+    mask_dir = image_path[:(len(image_path)-idx)]+'mask_std_threshold_4e-1.npy'
     print('Save background mask to: {}'.format(mask_dir))
     np.save(mask_dir, background_maks, allow_pickle=True)
 
@@ -220,7 +236,7 @@ def single(config_path, model_path, image_path, cuda, crf):
 
     fig = plt.gcf()
     prefix = image_path.split('/')[-1]
-    store_dir='result1/'
+    store_dir='result_std/'
     if not os.path.isdir(store_dir):
         os.makedirs(store_dir, exist_ok=True)
     fig.savefig(store_dir+prefix+'_demo.jpg')

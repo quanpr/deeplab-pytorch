@@ -4,7 +4,7 @@ cd ..
 dir=/home/prquan/hard_label_attack/human_study/image_pairs/img_
 # dirs=($(ls ${dir}*/))
 
-for i in {0..2};do
+for i in {0..19};do
     _dir=$dir${i}
     # files=$(ls $_dir)
     files=$(ls $_dir)
